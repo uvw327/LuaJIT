@@ -1,0 +1,57 @@
+name: build-windows-luajit
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build-win64:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: false
+          install: make mingw-w64-x86_64-gcc
+
+      - name: Show toolchain
+        run: |
+          gcc --version | head -1
+          make --version | head -1
+
+      - name: Build
+        run: |
+          cd src
+          make -j"$(nproc)" CC=gcc
+
+      - name: Test
+        run: |
+          cd src
+          ./luajit.exe -v
+          ./luajit.exe -e "print(jit.version, jit.arch, jit.os)"
+          ./luajit.exe -e "print(string.format('%.3f', 10/3))"
+          ./luajit.exe -e "local ffi=require('ffi') ffi.cdef[[int GetTickCount(void);]] print('ffi-ok', ffi.C.GetTickCount() > 0)"
+          ./luajit.exe -e "local ok,err=pcall(require,'jit.bc') print('jit.bc', ok, err)"
+
+      - name: Stage
+        run: |
+          set -e
+          rm -rf stage
+          mkdir -p stage/bin stage/lib stage/include/luajit-2.1 stage/share/luajit-2.1.0-beta3
+          cp src/luajit.exe stage/bin/
+          cp src/lua51.dll stage/bin/
+          cp src/*.a src/*.lib src/*.dll.a stage/lib/ 2>/dev/null || true
+          cp src/lua.h src/luajit.h src/lualib.h src/lauxlib.h src/luaconf.h stage/include/luajit-2.1/
+          cp -r src/jit stage/share/luajit-2.1.0-beta3/jit
+          cp src/luajit.pc stage/lib/ 2>/dev/null || true
+          find stage -type f | sort
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: luajit-2.1.0-beta3-win64
+          path: stage
